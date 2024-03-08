@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "onvif analyzer"
+version = "0.1.0"
+description = ""
+authors = ["assketick <tuhlin.nekit@yandex.ru>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+onvif-zeep-async = "^3.1.12"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
