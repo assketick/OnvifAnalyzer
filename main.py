@@ -26,10 +26,19 @@ class Window(tk.Tk):
         self._create_frames()
         self._create_widgets()
 
+    def _get_connection_attributes(self):
+        ip = self.ip_entry.get()
+        port = self.port_entry.get()
+        username = self.username_entry.get()
+        password = self.password_entry.get()
+        return ip, port, username, password
+
     def connect(self):
         try:
-            self.services = asyncio.run(get_services())
-            self._show_services()
+            ip, port, username, password = self._get_connection_attributes()
+            # self.analyzer = OnvifAnalyzer(ip, port, username, password)
+            # self.services = self.analyzer.get_services()
+            # self._show_services()
         except:
             ...
 
