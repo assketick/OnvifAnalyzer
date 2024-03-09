@@ -2,9 +2,10 @@ import os
 from typing import List
 from onvif import ONVIFCamera
 from collections import OrderedDict
+import sys
 
 
-def to_dict(self, services) -> List:
+def to_dict(services) -> List:
     services_str = str(services).replace(
         "<", "'<"
     ).replace(
@@ -12,38 +13,49 @@ def to_dict(self, services) -> List:
     )
     return eval(services_str)
 
-async def get_services():
+class OnvifAnalyzer:
+    def __init__(self, ip, port, username, password) -> None:
+        wsdl_path = [f'{path}/onvif/wsdl' for path in sys.path if 'site-packages' in path][0]
+        self.cam = ONVIFCamera(
+            ip, 
+            port, 
+            username, 
+            password,
+            wsdl_dir=wsdl_path,
+        )
 
-    cam = ONVIFCamera(
-        os.getenv('IP'),
-        os.getenv('PORT'),
-        os.getenv('USERNAME'),
-        os.getenv('PASSWORD'),
-        wsdl_dir=r'/Users/nikkey/Library/Caches/pypoetry/virtualenvs/onvif_analyzer-dPSGSVP_-py3.11/lib/python3.11/site-packages/onvif/wsdl',
-    )
-    await cam.update_xaddrs()
-    device_service = await cam.get_capabilities()
-    services = OrderedDict()
-    for service in device_service['Device']:
-        if service not in ('XAddr', '_attr_1', 'Extension'):
-            capabilities = device_service['Device'][service] or {}
-            now = {}
+    async def get_services(self):
+        await self.cam.update_xaddrs()
+        await self._get_services()
+        await self._get_capabilities()
+        return self.services
+
+
+    async def _get_capabilities(self):
+        device_service = await self.cam.get_capabilities()
+        self.services = OrderedDict()
+        for service in device_service['Device']:
+            if service not in ('XAddr', '_attr_1', 'Extension'):
+                capabilities = device_service['Device'][service] or {}
+                now = {}
+                for key, val in capabilities.items():
+                    if key not in ('Extension', '_attr_1', '_value_1'):
+                        now[key] = val
+                self.services['device'] = self.services.get('device', []) + [{service: now}]
+        return self.services
+
+    async def _get_services(self):
+        for xaddr in self.cam.xaddrs.keys():
+            service = xaddr.split('/')[-2]
+            service_object = await self.cam.create_onvif_service(service)
+            capabilities = to_dict(await service_object.GetServiceCapabilities())
+            caps = {}
             for key, val in capabilities.items():
-                if key not in ('Extension', '_attr_1', '_value_1'):
-                    now[key] = val
-            services['device'] = services.get('device', []) + [{service: now}]
+                if (
+                    isinstance(val, dict) and len(val) > 0 
+                    or not isinstance(val, dict) and val is not None
+                ):
+                    caps[key] = val
+            self.services[service] = caps
 
-    for xaddr in cam.xaddrs.keys():
-        service = xaddr.split('/')[-2]
-        service_object = await cam.create_onvif_service(service)
-        capabilities = to_dict(await service_object.GetServiceCapabilities())
-        caps = {}
-        for key, val in capabilities.items():
-            if (
-                isinstance(val, dict) and len(val) > 0 
-                or not isinstance(val, dict) and val is not None
-            ):
-                caps[key] = val
-        services[service] = caps
-
-    return services
+        return self.services
