@@ -1,7 +1,9 @@
 import asyncio
 import pprint
 import tkinter as tk
-from services import get_services
+from tkinter import messagebox
+from services import OnvifAnalyzer
+from httpx import ConnectTimeout
 
 
 class Window(tk.Tk):
@@ -36,11 +38,13 @@ class Window(tk.Tk):
     def connect(self):
         try:
             ip, port, username, password = self._get_connection_attributes()
-            # self.analyzer = OnvifAnalyzer(ip, port, username, password)
-            # self.services = self.analyzer.get_services()
-            # self._show_services()
-        except:
-            ...
+            self.analyzer = OnvifAnalyzer(ip, port, username, password)
+            self.services = asyncio.run(self.analyzer.get_services())
+            self._show_services()
+        except IndexError:
+            messagebox.showerror('Ошибка', 'Не удалось найти путь до wsdl файлов')
+        except ConnectTimeout:
+            messagebox.showerror('Ошибка', 'Не удалось подключиться к устройству! Проверьте данные авторизации.')
 
     def _create_frames(self):
         ''' Creation frame to display widgets '''
