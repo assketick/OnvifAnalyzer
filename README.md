@@ -13,5 +13,6 @@ Requirements:
 git clone git@github.com:assketick/OnvifAnalyzer.git
 poetry shell
 poetry install
+cd analyzer
 python main.py
 ```
