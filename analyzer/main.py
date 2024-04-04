@@ -4,6 +4,9 @@ import tkinter as tk
 from tkinter import messagebox
 from services import OnvifAnalyzer
 from httpx import ConnectTimeout
+import logging
+
+logger = logging.getLogger("Interface")
 
 
 class Window(tk.Tk):
@@ -46,7 +49,8 @@ class Window(tk.Tk):
             messagebox.showerror('Ошибка', 'Заполните все поля')
         except IndexError:
             messagebox.showerror('Ошибка', 'Не удалось найти путь до wsdl файлов')
-        except ConnectTimeout:
+        except Exception as e:
+            logger.warning(f"Exception - {e}")
             messagebox.showerror('Ошибка', 'Не удалось подключиться к устройству! Проверьте данные авторизации.')
 
     def _create_frames(self):
