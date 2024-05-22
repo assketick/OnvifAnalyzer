@@ -1,88 +1,69 @@
-import asyncio
-import os
-import pandas as pd
-from typing import List
-from onvif import ONVIFCamera
-from collections import OrderedDict
-from constants import (
-    DEVICE,
-    SERVICES
-)
 import sys
 import logging
+import pandas as pd
+from onvif import ONVIFCamera
+from collections import OrderedDict
+
+from onvif_services.device import Device
+from onvif_services.ptz import PTZ
+from onvif_services.imaging import Imaging
+
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("Services")
 
-
-def to_dict(services) -> List:
-    services_str = str(services).replace(
-        "<", "'<"
-    ).replace(
-        ">", ">'"
-    )
-    return eval(services_str)
+SERVICE_MAP = {
+    "device": Device,
+    "ptz": PTZ,
+    "imaging": Imaging,
+}
 
 class OnvifAnalyzer:
-    def __init__(self, ip, port, username, password) -> None:
+    def __init__(self, ip, port, username, password, to_save) -> None:
         wsdl_path = [f'{path}/onvif/wsdl' for path in sys.path if 'site-packages' in path][0]
-        self.cam = ONVIFCamera(
-            ip, 
-            port, 
-            username, 
-            password,
-            wsdl_dir=wsdl_path,
-        )
-        logger.warning(f"Connected!")
+        self.device = ONVIFCamera(ip, port, username, password, wsdl_dir=wsdl_path)
+        self.device_service = {}
+        self.to_save = to_save
 
+    async def analyze(self):
+        await self.device.update_xaddrs()
+        logger.info(f"Connected. Xaddrs updated.")
 
-    async def get_services(self):
-        await self.cam.update_xaddrs()
-        device = await self._get_device_functions()
-        services = await self._get_services()
-        services["device"] = device.get("device")
-        await self._write_excel(services)
+        self.device_service["device"] = await self.device.create_devicemgmt_service()
+        self.services = await self._get_services()
+        self.services = dict(self.device_service, **self.services)
+        logger.info(f"Available services - {self.services}")
 
-
-    async def _get_device_functions(self):
-        functions = SERVICES.get("device", [])
-        service_object = await self.cam.create_devicemgmt_service()
-        return await self._get_service_functions(functions, service_object, "device")
-
+        result = await self._get_supported_functions()
+        filename = await self._write_excel(result)
+        return filename
 
     async def _get_services(self):
-        res = {}
-        for xaddr in self.cam.xaddrs.keys():
-            service = xaddr.split('/')[-2]
-            # print(f'SERVICE - {service}')
-            functions = SERVICES.get(service, [])
-            # print(f'FUNCTIONS - {functions}\n\n')
-            service_object = await self.cam.create_onvif_service(service)
-            functions = await self._get_service_functions(functions, service_object, service)
-            res[service] = functions
-        return res
-        
+        services = {}
+        for xaddr in self.device.xaddrs.keys():
+            service = xaddr.split('/')[-2].lower()
+            service_object = await self.device.create_onvif_service(service)
+            services[service] = service_object
+        return services
 
-    async def _get_service_functions(self, functions, service_object, service_name):
-        res = {}
-        for function in functions:
-            try:
-                func = await getattr(service_object, function)()
-                res[function] = str(func)
-            except Exception as e:
-                if 'service has no operation' in str(e):
-                    res[function] = 'service has no operation'
-                else:
-                    # print(e)
-                    ...
-        return {service_name: res}
-    
+    async def _get_supported_functions(self):
+        result = {}
+        for service_name, service_obj in SERVICE_MAP.items():
+            logger.info(f"\n\n\nService - {service_name}")
+            custom_service_obj = SERVICE_MAP.get(service_name)
+            if custom_service_obj:
+                custom_service_obj = custom_service_obj(self.device)
+                service_functions = await custom_service_obj.run()
+                logger.info(f"Service result - {service_functions}")
+                result = OrderedDict(result, **service_functions)
+
+        return result
 
     async def _write_excel(self, services):
-        with pd.ExcelWriter('output/res.xlsx') as writer:
-            for service, functions in services.items():
-                df = pd.DataFrame.from_dict(functions, orient='index')
-                df.to_excel(writer, service)
-
-    
-if __name__ == "__main__":
-    analyzer = OnvifAnalyzer("172.18.191.254", "80", "admin", "Supervisor")
-    asyncio.run(analyzer.get_services())
+        logger.info(self.to_save)
+        try:
+            with pd.ExcelWriter(self.to_save) as writer:
+                for service_name, functions in services.items():
+                    df = pd.DataFrame.from_dict(functions, columns=["Результат анализа"], orient='index')
+                    df.to_excel(excel_writer=writer, sheet_name=service_name)
+        except Exception as e:
+            logger.error(e)
